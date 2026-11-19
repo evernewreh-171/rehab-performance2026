@@ -1,0 +1,1755 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>復健科業務量與職類產值分析系統</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- SheetJS (xlsx) -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- 選用：載入同目錄下的無個資公開統計檔 data.js（供 GitHub Pages 團隊共享） -->
+  <script src="data.js" onerror="window.__PUBLIC_DATA__=null;"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap');
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; color: #1e293b; }
+    .drop-active { border-color: #2563eb !important; background-color: #eff6ff !important; }
+    .tab-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.5rem 0.875rem;
+      border-radius: 0.625rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #475569;
+      background-color: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .tab-pill:hover {
+      background-color: #e2e8f0;
+      color: #0f172a;
+    }
+    .tab-pill.active {
+      background-color: #2563eb;
+      color: #ffffff;
+      border-color: #1d4ed8;
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+    }
+    .card { background: white; border-radius: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- 頂部導覽列 + 醒目置頂分頁切換列 -->
+  <header class="sticky top-0 z-30 shadow-md">
+    <div class="bg-slate-900 text-white">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="bg-blue-600 p-2 rounded-lg">
+            <i data-lucide="activity" class="w-5 h-5 text-white"></i>
+          </div>
+          <div>
+            <h1 class="text-base sm:text-lg font-bold tracking-wide">復健科業務量與職類產值分析平台</h1>
+            <p class="text-[11px] text-slate-300">復健科團隊營運儀表板 · 支援離線 Excel 更新與無個資公開分享</p>
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <span id="dataRangeBadge" class="bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-full text-slate-300">
+            已內建 112–115 年歷年業績｜請至下方匯入業務紀錄
+          </span>
+          <button onclick="exportPublicDataJs()" id="btnExportPublic" class="hidden bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition shadow-sm" title="移除病人姓名與病歷號，匯出 data.js 供上傳 GitHub 共享">
+            <i data-lucide="share-2" class="w-3.5 h-3.5"></i> 匯出公開檔 (data.js)
+          </button>
+          <button onclick="scrollToUploadPanel()" class="bg-slate-700 hover:bg-slate-600 border border-slate-600 text-white px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition">
+            <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i> 資料匯入 / 更新
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 最醒目的分析分頁切換列（置頂固定） -->
+    <nav class="bg-white border-b border-slate-200">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center gap-2 overflow-x-auto">
+        <button onclick="switchTab('tab-history')" id="btn-tab-history" class="tab-pill active">
+          <i data-lucide="bar-chart-3" class="w-4 h-4"></i> 1. 歷年實際申報與對帳
+        </button>
+        <button onclick="switchTab('tab-productivity')" id="btn-tab-productivity" class="tab-pill">
+          <i data-lucide="users" class="w-4 h-4"></i> 2. 職類產值與人力效能
+        </button>
+        <button onclick="switchTab('tab-specialty')" id="btn-tab-specialty" class="tab-pill">
+          <i data-lucide="pie-chart" class="w-4 h-4"></i> 3. 骨科/神經/小兒結構與熱點
+        </button>
+        <button onclick="switchTab('tab-heatmap')" id="btn-tab-heatmap" class="tab-pill">
+          <i data-lucide="calendar-clock" class="w-4 h-4"></i> 4. 全科早午晚 × 星期熱點
+        </button>
+        <button onclick="switchTab('tab-codes')" id="btn-tab-codes" class="tab-pill">
+          <i data-lucide="list-ordered" class="w-4 h-4"></i> 5. PT/OT 代碼申報明細
+        </button>
+        <button onclick="switchTab('tab-demographics')" id="btn-tab-demographics" class="tab-pill">
+          <i data-lucide="user-check" class="w-4 h-4"></i> 6. 身分別與來源比例
+        </button>
+        <button onclick="switchTab('tab-nhi180')" id="btn-tab-nhi180" class="tab-pill">
+          <i data-lucide="alert-triangle" class="w-4 h-4"></i> 7. 健保 180 次管控預警
+        </button>
+        <button onclick="switchTab('tab-insights')" id="btn-tab-insights" class="tab-pill">
+          <i data-lucide="lightbulb" class="w-4 h-4"></i> 8. 營運管理與排班建議
+        </button>
+      </div>
+    </nav>
+  </header>
+
+  <!-- 主內容區 -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full">
+    
+    <!-- 月份篩選器與口徑說明 -->
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-5">
+      <div class="flex items-center gap-2">
+        <span class="text-sm font-semibold text-slate-600">當年度分析區間篩選：</span>
+        <select id="monthFilter" onchange="recalculateAndRender()" class="bg-white border border-slate-300 text-slate-800 text-sm rounded-lg px-3 py-1.5 font-medium shadow-sm">
+          <option value="ALL">全部匯入月份累計</option>
+        </select>
+      </div>
+      <div class="text-xs text-slate-500">
+        人力口徑：<b>職類實上總時數 ÷ 當月正職標準應上時數</b>｜熱點口徑：<b>該時段實際有開診天數平均（自動排除國定假日休診）</b>｜健保管控：僅計 <b>IC</b> 與 <b>2~6</b>
+      </div>
+    </div>
+
+    <!-- KPI 卡片 -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div class="card p-4 border-l-4 border-l-blue-600">
+        <div class="text-xs font-semibold text-slate-500">登記服務人次 / 登記換算點數</div>
+        <div class="mt-1 flex items-baseline gap-2">
+          <span id="kpi-visits" class="text-2xl font-bold text-slate-800">0</span>
+          <span class="text-xs text-slate-500">人次</span>
+        </div>
+        <div id="kpi-total-pts" class="text-xs font-semibold text-blue-600 mt-1">登記總點數：0 點（含副木）</div>
+      </div>
+
+      <div class="card p-4 border-l-4 border-l-indigo-600">
+        <div class="text-xs font-semibold text-slate-500">PT 物理治療登記產值 / 人均月產值</div>
+        <div class="mt-1 flex items-baseline gap-2">
+          <span id="kpi-pt-pts" class="text-2xl font-bold text-slate-800">0</span>
+          <span class="text-xs text-slate-500">點</span>
+        </div>
+        <div id="kpi-pt-fte" class="text-xs font-semibold text-indigo-600 mt-1">實際人力：0 FTE｜人均：0 點/月</div>
+      </div>
+
+      <div class="card p-4 border-l-4 border-l-emerald-600">
+        <div class="text-xs font-semibold text-slate-500">OT 職能治療登記產值（含副木）</div>
+        <div class="mt-1 flex items-baseline gap-2">
+          <span id="kpi-ot-pts" class="text-2xl font-bold text-slate-800">0</span>
+          <span class="text-xs text-slate-500">點</span>
+        </div>
+        <div id="kpi-ot-fte" class="text-xs font-semibold text-emerald-600 mt-1">實際人力：0 FTE｜人均：0 點/月</div>
+      </div>
+
+      <div class="card p-4 border-l-4 border-l-rose-600">
+        <div class="text-xs font-semibold text-slate-500">健保 180 次管控預警（全年度累計）</div>
+        <div class="mt-1 flex items-baseline gap-2">
+          <span id="kpi-over180" class="text-2xl font-bold text-rose-600">0</span>
+          <span class="text-xs text-slate-500">人已達 ≥180 次</span>
+        </div>
+        <div id="kpi-warn150" class="text-xs font-semibold text-amber-600 mt-1">警戒區（150~179次）：0 人</div>
+      </div>
+    </div>
+
+    <!-- 分頁 1：歷年實際申報與登記對帳 -->
+    <div id="tab-history" class="tab-content space-y-6">
+      <div id="historyKpiRow" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="card p-5">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <h3 class="text-base font-bold text-slate-800">112–115 年各月實際申報趨勢比較</h3>
+              <p class="text-xs text-slate-500">可切換檢視不同職類或平均日人次</p>
+            </div>
+            <select id="histMetricSelect" onchange="renderHistorySection()" class="border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-medium bg-slate-50">
+              <option value="TOTAL">全科總申報點數 (PT+OT+副木)</option>
+              <option value="TOTAL_PAC">全科總申報點數 (含 PAC)</option>
+              <option value="PT">僅 PT 物理治療點數</option>
+              <option value="OT_ALL">僅 OT 職能治療點數 (含副木)</option>
+              <option value="SPLINT">僅副木申報點數</option>
+              <option value="DAILY_AVG">平均每日治療人次</option>
+            </select>
+          </div>
+          <div class="h-72"><canvas id="chartHistoryYoY"></canvas></div>
+        </div>
+
+        <div class="card p-5">
+          <div class="mb-3">
+            <h3 class="text-base font-bold text-slate-800">115 年（2026）「實際申報」vs.「每日登記換算」比較</h3>
+            <p class="text-xs text-slate-500">比對歷年業績表實際申報點數與全院累計+副木表單登記估算點數</p>
+          </div>
+          <div class="h-72"><canvas id="chartReconcile2026"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card p-5 overflow-x-auto">
+        <div class="mb-3">
+          <h3 class="text-base font-bold text-slate-800">115 年（2026）逐月「實際申報」vs.「每日登記」差異對帳表</h3>
+          <p class="text-xs text-slate-500">差異 = 實際申報點數 − 每日登記換算點數</p>
+        </div>
+        <table class="w-full text-sm text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-100 text-slate-700 border-b border-slate-200">
+              <th class="py-2.5 px-3">月份</th>
+              <th class="py-2.5 px-3 text-right">PT 登記點數</th>
+              <th class="py-2.5 px-3 text-right">PT 實際申報</th>
+              <th class="py-2.5 px-3 text-right">PT 差額</th>
+              <th class="py-2.5 px-3 text-right">OT 登記點數</th>
+              <th class="py-2.5 px-3 text-right">OT 實際申報</th>
+              <th class="py-2.5 px-3 text-right">OT 差額</th>
+              <th class="py-2.5 px-3 text-right">副木表單登記</th>
+              <th class="py-2.5 px-3 text-right">副木實際申報</th>
+              <th class="py-2.5 px-3 text-right">全科總差額</th>
+            </tr>
+          </thead>
+          <tbody id="tableReconcileBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+
+      <div class="card p-5 overflow-x-auto">
+        <h3 class="text-base font-bold text-slate-800 mb-3">112–115 年各月實際申報點數明細總表（PT + OT + 副木，不含 PAC）</h3>
+        <table class="w-full text-xs text-right border-collapse">
+          <thead>
+            <tr class="bg-slate-100 text-slate-700 border-b border-slate-200">
+              <th class="py-2 px-2 text-left">年度 / 項目</th>
+              <th class="py-2 px-2">1月</th><th class="py-2 px-2">2月</th><th class="py-2 px-2">3月</th>
+              <th class="py-2 px-2">4月</th><th class="py-2 px-2">5月</th><th class="py-2 px-2">6月</th>
+              <th class="py-2 px-2">7月</th><th class="py-2 px-2">8月</th><th class="py-2 px-2">9月</th>
+              <th class="py-2 px-2">10月</th><th class="py-2 px-2">11月</th><th class="py-2 px-2">12月</th>
+              <th class="py-2 px-2 bg-slate-200 font-bold">1-10月同期累計</th>
+              <th class="py-2 px-2 bg-slate-200 font-bold">全年度總計</th>
+            </tr>
+          </thead>
+          <tbody id="tableHistoryMatrixBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 分頁 2：職類產值與人力效能 -->
+    <div id="tab-productivity" class="tab-content hidden space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="card p-5">
+          <h3 class="text-base font-bold text-slate-800 mb-1">各月 PT vs. OT 登記申報點數趨勢</h3>
+          <p class="text-xs text-slate-500 mb-4">OT 點數已自動合併當月副木申報點數</p>
+          <div class="h-72"><canvas id="chartMonthlyRevenue"></canvas></div>
+        </div>
+        <div class="card p-5">
+          <h3 class="text-base font-bold text-slate-800 mb-1">各月 PT vs. OT 人均產值（點數 / 實際 FTE）</h3>
+          <p class="text-xs text-slate-500 mb-4">公式與 Power BI 一致：職類實上總時數 ÷ 當月正職標準應上時數（排除行政人員）</p>
+          <div class="h-72"><canvas id="chartMonthlyPerFte"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card p-5 overflow-x-auto">
+        <h3 class="text-base font-bold text-slate-800 mb-3">各月份職類實際人力（FTE）、工時與產值明細表（與 Power BI 口徑一致）</h3>
+        <table class="w-full text-sm text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-100 text-slate-700 border-b border-slate-200">
+              <th class="py-2.5 px-3">月份</th>
+              <th class="py-2.5 px-3 text-right">PT 上班時數</th>
+              <th class="py-2.5 px-3 text-right">PT 實際人力(FTE)</th>
+              <th class="py-2.5 px-3 text-right">PT 登記點數</th>
+              <th class="py-2.5 px-3 text-right">PT 人均產值</th>
+              <th class="py-2.5 px-3 text-right">PT 每小時產值</th>
+              <th class="py-2.5 px-3 text-right">OT 上班時數</th>
+              <th class="py-2.5 px-3 text-right">OT 實際人力(FTE)</th>
+              <th class="py-2.5 px-3 text-right">OT 總點數(含副木)</th>
+              <th class="py-2.5 px-3 text-right">OT 人均產值</th>
+              <th class="py-2.5 px-3 text-right">OT 每小時產值</th>
+            </tr>
+          </thead>
+          <tbody id="tableProductivityBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 分頁 3：骨科 / 神經科 / 小兒 結構與熱點 -->
+    <div id="tab-specialty" class="tab-content hidden space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="card p-5">
+          <h3 class="text-base font-bold text-slate-800 mb-1">三大服務族群業務量比例</h3>
+          <p class="text-xs text-slate-500 mb-3">小兒（來源=小兒）｜神經科（有申報OT）｜骨科（僅申報PT）</p>
+          <div class="h-64"><canvas id="chartSpecialtyPie"></canvas></div>
+        </div>
+        <div class="card p-5 lg:col-span-2">
+          <h3 class="text-base font-bold text-slate-800 mb-1">骨科 / 神經科 / 小兒 每月服務人次消長趨勢</h3>
+          <p class="text-xs text-slate-500 mb-3">觀察各月三大族群就診人數變化</p>
+          <div class="h-64"><canvas id="chartSpecialtyMonthly"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card p-5 overflow-x-auto">
+        <h3 class="text-base font-bold text-slate-800 mb-3">各月份骨科 / 神經科 / 小兒 人次與佔比明細</h3>
+        <table class="w-full text-sm text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-100 text-slate-700 border-b border-slate-200">
+              <th class="py-2.5 px-3">月份</th>
+              <th class="py-2.5 px-3 text-right text-blue-700">骨科 (純PT) 人次</th>
+              <th class="py-2.5 px-3 text-right">骨科佔比</th>
+              <th class="py-2.5 px-3 text-right text-emerald-700">神經科 (含OT) 人次</th>
+              <th class="py-2.5 px-3 text-right">神經科佔比</th>
+              <th class="py-2.5 px-3 text-right text-amber-700">小兒復健人次</th>
+              <th class="py-2.5 px-3 text-right">小兒佔比</th>
+              <th class="py-2.5 px-3 text-right">其他(僅副木/未填)</th>
+              <th class="py-2.5 px-3 text-right font-bold">全科總人次</th>
+            </tr>
+          </thead>
+          <tbody id="tableSpecialtyMonthlyBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+
+      <div class="card p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 class="text-base font-bold text-slate-800">分科每日熱點分布（依實際有開診診次計算平均）</h3>
+            <p class="text-xs text-slate-500">自動排除國定假日或無晚班之休診時段（例如 10 月週一、週五晚班僅開 3 診，則除以 3）</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-slate-600">切換檢視族群：</span>
+            <select id="specHeatmapFilter" onchange="renderSpecialtySection()" class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-semibold bg-blue-50 text-blue-900">
+              <option value="ORTHO">骨科患者（僅申報 PT）</option>
+              <option value="NEURO">神經科 / 中風患者（有申報 OT）</option>
+              <option value="PEDS">小兒復健患者（來源為小兒）</option>
+            </select>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-center border-collapse" id="specHeatmapTable"></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 分頁 4：全科早午晚 × 星期平均熱點 -->
+    <div id="tab-heatmap" class="tab-content hidden space-y-6">
+      <div class="card p-5">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <div>
+            <h3 class="text-base font-bold text-slate-800">全科早 / 午 / 晚 × 星期「實際開診平均人次」熱點分布</h3>
+            <p class="text-xs text-slate-500">自動偵測該時段實際有看診的天數（國定假日休診或無晚班不計入分母）；無出勤時段顯示「休診」</p>
+          </div>
+          <div class="flex items-center gap-2 text-xs">
+            <span class="px-2.5 py-1 rounded bg-blue-50 text-blue-800 border border-blue-200">低負荷</span>
+            <span class="px-2.5 py-1 rounded bg-blue-300 text-blue-950">中負荷</span>
+            <span class="px-2.5 py-1 rounded bg-blue-600 text-white font-bold">尖峰高負荷</span>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-center border-collapse" id="heatmapTable"></table>
+        </div>
+      </div>
+
+      <div class="card p-5">
+        <h3 class="text-base font-bold text-slate-800 mb-3">各時段（早 / 午 / 晚）累計治療人次比較</h3>
+        <div class="h-64"><canvas id="chartShiftBar"></canvas></div>
+      </div>
+    </div>
+
+    <!-- 分頁 5：PT/OT 代碼申報與副木明細 -->
+    <div id="tab-codes" class="tab-content hidden space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="card p-5">
+          <h3 class="text-base font-bold text-slate-800 mb-3">PT 物理治療代碼申報排行（點數佔比）</h3>
+          <div class="h-72"><canvas id="chartPtCodes"></canvas></div>
+        </div>
+        <div class="card p-5">
+          <h3 class="text-base font-bold text-slate-800 mb-3">OT 職能治療（含副木）代碼申報排行</h3>
+          <div class="h-72"><canvas id="chartOtCodes"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card p-5 overflow-x-auto">
+        <h3 class="text-base font-bold text-slate-800 mb-3">全科治療代碼申報彙總表</h3>
+        <table class="w-full text-sm text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-100 text-slate-700 border-b border-slate-200">
+              <th class="py-2.5 px-3">職類</th>
+              <th class="py-2.5 px-3">申報代碼</th>
+              <th class="py-2.5 px-3">治療項目名稱</th>
+              <th class="py-2.5 px-3 text-right">健保點值</th>
+              <th class="py-2.5 px-3 text-right">申報人次/件數</th>
+              <th class="py-2.5 px-3 text-right">總申報點數</th>
+              <th class="py-2.5 px-3 text-right">佔全科點數比例</th>
+            </tr>
+          </thead>
+          <tbody id="tableCodesBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 分頁 6：身分別與來源比例 -->
+    <div id="tab-demographics" class="tab-content hidden space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="card p-5">
+          <h3 class="text-base font-bold text-slate-800 mb-1">病患身分別比例（人次）</h3>
+          <p class="text-xs text-slate-500 mb-4">原始紀錄空白欄位已自動歸類為「一般身分」</p>
+          <div class="h-72"><canvas id="chartIdentity"></canvas></div>
+        </div>
+        <div class="card p-5">
+          <h3 class="text-base font-bold text-slate-800 mb-1">病患來源比例（人次）</h3>
+          <p class="text-xs text-slate-500 mb-4">三位車載司機獨立呈現；NH6F/NH7F/NH康睿3F 已合併為「護理之家 (NH)」</p>
+          <div class="h-72"><canvas id="chartSource"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card p-5 overflow-x-auto">
+        <h3 class="text-base font-bold text-slate-800 mb-3">各來源病患服務人次與申報貢獻分析</h3>
+        <table class="w-full text-sm text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-100 text-slate-700 border-b border-slate-200">
+              <th class="py-2.5 px-3">病患來源</th>
+              <th class="py-2.5 px-3 text-right">就診人次</th>
+              <th class="py-2.5 px-3 text-right">人次佔比</th>
+              <th class="py-2.5 px-3 text-right">總申報點數</th>
+              <th class="py-2.5 px-3 text-right">平均單次點數</th>
+            </tr>
+          </thead>
+          <tbody id="tableSourceBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 分頁 7：健保 180 次管控預警名單 -->
+    <div id="tab-nhi180" class="tab-content hidden space-y-6">
+      <div class="card p-5">
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <div>
+            <h3 class="text-base font-bold text-slate-800">健保署年度 180 次管控預警追蹤表</h3>
+            <p class="text-xs text-slate-500">採計全部匯入之年度紀錄；僅計 <b>IC</b> 與 <b>2~6</b>，同日 PT+OT 計為 1 次（若為公開分享版則姓名已去識別化）</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="text" id="nhiSearch" onkeyup="renderNhiTable()" placeholder="搜尋病歷號或姓名..." class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm" />
+            <select id="nhiStatusFilter" onchange="renderNhiTable()" class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm">
+              <option value="WARN">僅顯示預警名單 (≥150次)</option>
+              <option value="OVER">僅顯示已超標 (≥180次)</option>
+              <option value="ALL">顯示全部病患 (前300名)</option>
+            </select>
+            <button onclick="exportNhiCsv()" class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium px-3 py-2 rounded-lg flex items-center gap-1">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i> 匯出預警 CSV
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto max-h-[540px]">
+          <table class="w-full text-sm text-left border-collapse">
+            <thead class="sticky top-0 bg-slate-100 text-slate-700 border-b border-slate-200">
+              <tr>
+                <th class="py-2.5 px-3">狀態燈號</th>
+                <th class="py-2.5 px-3">病歷號</th>
+                <th class="py-2.5 px-3">姓名</th>
+                <th class="py-2.5 px-3">主要來源</th>
+                <th class="py-2.5 px-3 text-right">年度健保次數</th>
+                <th class="py-2.5 px-3 text-right">距離180次餘額</th>
+                <th class="py-2.5 px-3 text-right">PT 日數</th>
+                <th class="py-2.5 px-3 text-right">OT 日數</th>
+                <th class="py-2.5 px-3">最近就診日</th>
+              </tr>
+            </thead>
+            <tbody id="tableNhiBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 分頁 8：營運管理與排班建議 -->
+    <div id="tab-insights" class="tab-content hidden space-y-6">
+      <div id="insightsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+
+      <div class="card p-5 overflow-x-auto">
+        <h3 class="text-base font-bold text-slate-800 mb-1">高頻病患流失斷層追蹤（上月密集回診 ≥6 次，但最近一個月 0 回診）</h3>
+        <p class="text-xs text-slate-500 mb-3">建議由櫃檯或主責治療師電話關懷，確認是否轉院、住院或已結案</p>
+        <table class="w-full text-sm text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-100 text-slate-700 border-b border-slate-200">
+              <th class="py-2.5 px-3">病歷號</th>
+              <th class="py-2.5 px-3">姓名</th>
+              <th class="py-2.5 px-3">來源</th>
+              <th class="py-2.5 px-3 text-right">前月治療次數</th>
+              <th class="py-2.5 px-3 text-right">本年度累計次數</th>
+              <th class="py-2.5 px-3">最後就診日期</th>
+            </tr>
+          </thead>
+          <tbody id="tableChurnBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- 管理者檔案匯入區（置於頁面最下方） -->
+  <footer id="uploadPanel" class="bg-slate-100 border-t border-slate-300 mt-10">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="database" class="w-4 h-4 text-slate-600"></i>
+          <h2 class="text-sm font-bold text-slate-800">管理者資料匯入與更新區（本機離線運算，病人個資不上傳）</h2>
+        </div>
+        <span class="text-xs text-slate-500">匯入完成後，可點擊右上角「匯出公開檔 (data.js)」放入 GitHub 供全科同仁瀏覽</span>
+      </div>
+
+      <div id="dropZone" class="bg-white border-2 border-dashed border-slate-300 rounded-xl p-5 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50/40 transition" onclick="document.getElementById('fileInput').click()">
+        <input type="file" id="fileInput" multiple accept=".xlsx,.xls,.csv" class="hidden" onchange="handleFiles(this.files)" />
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <i data-lucide="folder-up" class="w-8 h-8 text-blue-600"></i>
+          <div class="text-left">
+            <p class="text-sm font-semibold text-slate-700">點擊此處或將所有 Excel 檔案拖曳至此（支援一次全選上傳）</p>
+            <p class="text-xs text-slate-500">
+              支援：<b>全院累計_匯出.xlsx</b>、<b>副木申請單 (回覆).xlsx</b>、<b>各月事後排班表.xlsx</b>、<b>歷年業績.xlsx</b>、<b>復健科申報點值.xlsx</b>、<b>復健科職稱表.xlsx</b>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 檔案狀態指示燈 -->
+      <div class="grid grid-cols-2 sm:grid-cols-6 gap-2 mt-3 text-xs">
+        <div id="status-daily" class="p-2 rounded-lg bg-white text-slate-500 border border-slate-200 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-slate-400"></span> 每日業務紀錄
+        </div>
+        <div id="status-splint" class="p-2 rounded-lg bg-white text-slate-500 border border-slate-200 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-slate-400"></span> 副木紀錄
+        </div>
+        <div id="status-schedule" class="p-2 rounded-lg bg-white text-slate-500 border border-slate-200 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-slate-400"></span> 事後班表 (0月)
+        </div>
+        <div id="status-history" class="p-2 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1.5 font-medium">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span> 歷年業績 (112-115)
+        </div>
+        <div id="status-points" class="p-2 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1.5 font-medium">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span> 申報點值 (23項)
+        </div>
+        <div id="status-roles" class="p-2 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1.5 font-medium">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span> 職稱表 (13人)
+        </div>
+      </div>
+      <div id="uploadLog" class="mt-2 text-xs text-slate-600"></div>
+    </div>
+  </footer>
+
+  <script>
+    lucide.createIcons();
+
+    const store = {
+      isPublicMode: false,
+      publicSnapshot: null,
+      dailyRecords: [],
+      pointMap: {},
+      staffRoles: {},
+      schedules: {},
+      rawScheduleWbs: [],
+      splints: [],
+      historyData: {},
+      charts: {},
+      nhiList: [],
+      churnList: []
+    };
+
+    const DEFAULT_POINTS = {
+      '42002B': { name: '簡單治療-物理治療', points: 160, type: 'PT' },
+      '42005B': { name: '中度治療-物理治療(1)', points: 320, type: 'PT' },
+      '42008B': { name: '中度治療-物理治療(2)', points: 320, type: 'PT' },
+      '42011B': { name: '複雜治療-物理治療(1)', points: 480, type: 'PT' },
+      '42014B': { name: '複雜治療-物理治療(2)', points: 600, type: 'PT' },
+      '43005B': { name: '中度治療-職能治療', points: 320, type: 'OT' },
+      '43008B': { name: '複雜治療-職能治療', points: 480, type: 'OT' },
+      '43010C': { name: '短腿固定副木設計費', points: 420, type: 'OT' },
+      '43011C': { name: '短腿固定副木材料費', points: 1300, type: 'OT' },
+      '43012C': { name: '長腿固定副木設計費', points: 420, type: 'OT' },
+      '43013C': { name: '長腿固定副木材料費', points: 2300, type: 'OT' },
+      '43014C': { name: '豎腕副木設計費', points: 315, type: 'OT' },
+      '43015C': { name: '豎腕副木材料費', points: 350, type: 'OT' },
+      '43016C': { name: '手部抗痙攣副木設計費', points: 315, type: 'OT' },
+      '43017C': { name: '手部抗痙攣副木材料費', points: 500, type: 'OT' },
+      '43018C': { name: '手指伸展副木設計費', points: 140, type: 'OT' },
+      '43019C': { name: '手指伸展副木材料費', points: 180, type: 'OT' },
+      '43020C': { name: '長形對掌副木設計費', points: 160, type: 'OT' },
+      '43021C': { name: '長形對掌副木材料費', points: 240, type: 'OT' },
+      '43022C': { name: '短形對掌副木設計費', points: 160, type: 'OT' },
+      '43023C': { name: '短形對掌副木材料費', points: 150, type: 'OT' },
+      '43037C': { name: '肩部固定副木設計費', points: 420, type: 'OT' },
+      '43038C': { name: '肩部固定副木材料費', points: 1300, type: 'OT' }
+    };
+    store.pointMap = { ...DEFAULT_POINTS };
+
+    const DEFAULT_ROLES = {
+      '1710': { name: '黃詣紋', role: 'PT', countProd: true, partTime: false },
+      '1711': { name: '廖倚欣', role: 'PT', countProd: true, partTime: false },
+      '1712': { name: '閔儀卉', role: '行政', countProd: false, partTime: false },
+      '1713': { name: '李靜怡', role: 'PT', countProd: true, partTime: false },
+      '1714': { name: '陳麗如', role: 'PT', countProd: true, partTime: false },
+      '1715': { name: '王瓊儀', role: 'PT', countProd: true, partTime: false },
+      '1718': { name: '徐聖喬', role: 'OT', countProd: true, partTime: true },
+      '1751': { name: '鄭妃婷', role: 'PT', countProd: true, partTime: false },
+      '1941': { name: '林靜儀', role: 'OT', countProd: true, partTime: false },
+      '2825': { name: '黃瑀珍', role: 'OT', countProd: true, partTime: false },
+      '2725': { name: '楊喬詒', role: 'PT', countProd: true, partTime: false },
+      '2304': { name: '林靜宜', role: 'PT', countProd: true, partTime: true },
+      '2760': { name: '張瑜庭', role: 'OT', countProd: true, partTime: false }
+    };
+    store.staffRoles = { ...DEFAULT_ROLES };
+
+    const DEFAULT_HISTORY = {
+      '112': {
+        label: '112年 (2023)',
+        pt:     [552444, 658664, 905856, 811132, 957688, 860097, 782272, 998968, 877714, 892536, 966216, 1003850],
+        ot:     [176464, 237248, 317824, 301520, 363168, 298112, 265088, 334976, 276832, 304720, 345696, 329376],
+        splint: [6205, 8270, 3370, 6695, 4645, 9120, 3130, 11380, 3600, 1135, 815, 5425],
+        pac:    [0, 0, 0, 0, 0, 22977, 0, 0, 25530, 0, 0, 56850],
+        dailyAvg: [77.55, 82.41, 99.68, 97.16, 104.48, 100.78, 97.38, 109.24, 102.91, 106.65, 110.25, 111.11]
+      },
+      '113': {
+        label: '113年 (2024)',
+        pt:     [956188, 638740, 925270, 837432, 962112, 765608, 786096, 918264, 865376, 794880, 896593, 864389],
+        ot:     [318144, 217808, 282016, 262144, 284352, 241024, 268928, 319872, 299584, 246784, 278144, 282528],
+        splint: [5585, 1480, 6880, 3350, 4070, 6576, 8505, 3865, 3440, 6295, 0, 3600],
+        pac:    [34980, 0, 83070, 22221, 0, 0, 0, 0, 0, 0, 22977, 22221],
+        dailyAvg: [100.84, 95.84, 100.30, 101.30, 108.40, 99.05, 102.00, 106.41, 108.91, 111.05, 109.23, 103.21]
+      },
+      '114': {
+        label: '114年 (2025)',
+        pt:     [644688, 762015, 807992, 783564, 837072, 800200, 744904, 829000, 886328, 947152, 907498, 1019280],
+        ot:     [217664, 228064, 256704, 242512, 264160, 254784, 214880, 252736, 273344, 274112, 259392, 308640],
+        splint: [3865, 2960, 7695, 14300, 9880, 13855, 16185, 7040, 14601, 7695, 5240, 5985],
+        pac:    [0, 89655, 60846, 255855, 20424, 0, 0, 0, 34164, 0, 5106, 0],
+        dailyAvg: [90.52, 90.14, 100.89, 99.91, 100.24, 102.74, 109.80, 105.35, 105.71, 109.16, 119.40, 115.64]
+      },
+      '115': {
+        label: '115年 (2026)',
+        pt:     [863960, 594448, 937454, 941720, 923920, 842464, 941520, 796824, 843100, 857512, null, null],
+        ot:     [277760, 184160, 282528, 265856, 256016, 242976, 277216, 216000, 235962, 221152, null, null],
+        splint: [6465, 15250, 11550, 5145, 9415, 4032, 8330, 12470, 9450, 54465, null, null],
+        pac:    [0, 0, 14814, 0, 0, 0, 0, 0, 0, 0, null, null],
+        dailyAvg: [101.27, 94.67, 110.04, 111.83, 113.49, 104.35, 107.96, 102.84, 108.00, 104.70, null, null]
+      }
+    };
+    store.historyData = JSON.parse(JSON.stringify(DEFAULT_HISTORY));
+
+    const dropZone = document.getElementById('dropZone');
+    ['dragenter', 'dragover'].forEach(evt => {
+      dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.add('drop-active'); });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+      dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.remove('drop-active'); });
+    });
+    dropZone.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+
+    function scrollToUploadPanel() {
+      document.getElementById('uploadPanel').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.tab-pill').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).classList.remove('hidden');
+      document.getElementById('btn-' + tabId).classList.add('active');
+    }
+
+    async function handleFiles(fileList) {
+      const logMessages = [];
+      for (const file of fileList) {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+        if (!rows.length) continue;
+
+        const cols = Object.keys(rows[0]).map(c => c.trim());
+        const fname = file.name;
+
+        if (cols.includes('病歷號') && (cols.includes('PT') || cols.includes('OT') || cols.includes('物理治療'))) {
+          store.isPublicMode = false;
+          parseDailyRecords(rows);
+          setStatusBadge('status-daily', `業務紀錄 (${store.dailyRecords.length.toLocaleString()}筆)`);
+          logMessages.push(`✔ 每日業務紀錄：${fname}（${store.dailyRecords.length.toLocaleString()} 筆）`);
+        }
+        else if (cols.includes('1月') && cols.includes('6月') && cols.includes('12月')) {
+          parseHistoryWorkbook(workbook);
+          setStatusBadge('status-history', `歷年業績 (已更新)`);
+          logMessages.push(`✔ 歷年業績表：${fname}`);
+        }
+        else if ((cols.includes('申報碼') || cols.includes('代碼')) && (cols.includes('點數') || cols.includes('點值'))) {
+          parsePointTable(rows);
+          setStatusBadge('status-points', `申報點值 (${Object.keys(store.pointMap).length}項)`);
+          logMessages.push(`✔ 申報點值表：${fname}`);
+        }
+        else if (cols.includes('員編') && (cols.includes('職類') || cols.includes('職稱'))) {
+          parseRoleTable(rows);
+          if (store.rawScheduleWbs.length) {
+            store.schedules = {};
+            store.rawScheduleWbs.forEach(item => parseScheduleWorkbook(item.wb, item.fname, false));
+          }
+          setStatusBadge('status-roles', `職稱表 (${Object.keys(store.staffRoles).length}人)`);
+          logMessages.push(`✔ 職稱對照表：${fname}`);
+        }
+        else if (cols.some(c => c.includes('副木名稱及代碼'))) {
+          parseSplintRows(rows);
+          setStatusBadge('status-splint', `副木紀錄 (${store.splints.length}筆)`);
+          logMessages.push(`✔ 副木申請單：${fname}（${store.splints.length} 筆）`);
+        }
+        else if (fname.includes('排班') || fname.includes('班表') || workbook.SheetNames.some(s => s.includes('復健治療科'))) {
+          parseScheduleWorkbook(workbook, fname, true);
+          setStatusBadge('status-schedule', `事後班表 (${Object.keys(store.schedules).length}個月)`);
+          logMessages.push(`✔ 事後排班表：${fname}`);
+        } else {
+          logMessages.push(`⚠ 未辨識檔案：${fname}`);
+        }
+      }
+      document.getElementById('uploadLog').innerHTML = logMessages.join(' ｜ ');
+      if (store.dailyRecords.length > 0) {
+        document.getElementById('btnExportPublic').classList.remove('hidden');
+      }
+      updateMonthFilterOptions();
+      recalculateAndRender();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function setStatusBadge(id, text) {
+      const el = document.getElementById(id);
+      el.className = 'p-2 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1.5 font-medium';
+      el.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span> ${text}`;
+    }
+
+    function parseHistoryWorkbook(workbook) {
+      const s1 = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: '' });
+      let currentYr = '';
+      for (let r = 1; r < s1.length; r++) {
+        const label = String(s1[r][0] || '').trim();
+        const vals = s1[r].slice(1, 13).map(v => (v === '' || v === null || isNaN(Number(v))) ? null : Number(v));
+        const mPt = label.match(/^(\d{3})PT$/i);
+        const mOt = label.match(/^(\d{3})OT$/i);
+        if (mPt) {
+          currentYr = mPt[1];
+          if (!store.historyData[currentYr]) {
+            store.historyData[currentYr] = {
+              label: `${currentYr}年 (${Number(currentYr) + 1911})`,
+              pt: Array(12).fill(null), ot: Array(12).fill(null),
+              splint: Array(12).fill(0), pac: Array(12).fill(0), dailyAvg: Array(12).fill(null)
+            };
+          }
+          store.historyData[currentYr].pt = vals;
+        } else if (mOt && store.historyData[mOt[1]]) {
+          store.historyData[mOt[1]].ot = vals;
+        } else if (label === '副木' && currentYr && store.historyData[currentYr]) {
+          store.historyData[currentYr].splint = vals.map(v => v || 0);
+        } else if (label === 'PAC' && currentYr && store.historyData[currentYr]) {
+          store.historyData[currentYr].pac = vals.map(v => v || 0);
+        }
+      }
+      if (workbook.SheetNames.length >= 2) {
+        const s2 = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[1]], { header: 1, defval: '' });
+        let yr2 = '';
+        for (let r = 1; r < s2.length; r++) {
+          const label = String(s2[r][0] || '').trim();
+          const mPt = label.match(/^(\d{3})PT$/i);
+          if (mPt) yr2 = mPt[1];
+          if (label.includes('平均日人次') && yr2 && store.historyData[yr2]) {
+            store.historyData[yr2].dailyAvg = s2[r].slice(1, 13).map(v => (v === '' || isNaN(Number(v))) ? null : Number(Number(v).toFixed(2)));
+          }
+        }
+      }
+    }
+
+    function parseDailyRecords(rows) {
+      const parsed = [];
+      for (const r of rows) {
+        const rawDate = r['日期'];
+        if (!rawDate) continue;
+        let dt = rawDate instanceof Date ? rawDate : new Date(String(rawDate).replace(/\//g, '-'));
+        if (isNaN(dt.getTime())) continue;
+
+        const yyyy = dt.getFullYear();
+        const mm = String(dt.getMonth() + 1).padStart(2, '0');
+        const dd = String(dt.getDate()).padStart(2, '0');
+        const ym = `${yyyy}-${mm}`;
+        const ymd = `${yyyy}-${mm}-${dd}`;
+        const hour = dt.getHours() + dt.getMinutes() / 60;
+        const dow = dt.getDay();
+
+        let shift = '其他';
+        if (hour >= 7.5 && hour < 12) shift = '早班 (07:30-12:00)';
+        else if (hour >= 12 && hour < 17) shift = '午班 (12:00-17:00)';
+        else if (hour >= 17 && hour <= 21.5) shift = '晚班 (17:00-21:00)';
+
+        const pid = String(r['病歷號'] || '').trim();
+        const pname = String(r['姓名'] || '').trim();
+        const countTag = String(r['次數'] || '').trim().toUpperCase();
+
+        let ptCode = String(r['PT'] ?? r['物理治療'] ?? '').trim().toUpperCase();
+        let otCode = String(r['OT'] ?? r['職能治療'] ?? '').trim().toUpperCase();
+        if (ptCode === '0' || ptCode === 'NAN' || ptCode === 'NULL') ptCode = '';
+        if (otCode === '0' || otCode === 'NAN' || otCode === 'NULL') otCode = '';
+
+        let identity = String(r['身分別'] || '').trim();
+        if (!identity || identity.toLowerCase() === 'nan') identity = '一般身分';
+
+        let rawSource = String(r['來源'] || '').trim();
+        if (!rawSource || rawSource.toLowerCase() === 'nan') rawSource = '未註明';
+        const source = rawSource.toUpperCase().startsWith('NH') ? '護理之家 (NH)' : rawSource;
+
+        let specialty = 'OTHER';
+        if (rawSource === '小兒') specialty = 'PEDS';
+        else if (otCode) specialty = 'NEURO';
+        else if (ptCode) specialty = 'ORTHO';
+
+        parsed.push({
+          ym, ymd, dow, shift, pid, pname, countTag, ptCode, otCode, identity, source, specialty
+        });
+      }
+      store.dailyRecords = parsed;
+    }
+
+    function parsePointTable(rows) {
+      for (const r of rows) {
+        const code = String(r['申報碼'] ?? r['代碼'] ?? '').trim().toUpperCase();
+        if (!code) continue;
+        const pts = Number(r['點數'] ?? r['點值'] ?? r['健保點值'] ?? 0);
+        const existingName = store.pointMap[code]?.name || code;
+        const name = String(r['項目名稱'] ?? r['治療項目'] ?? existingName).trim();
+        const type = code.startsWith('43') ? 'OT' : 'PT';
+        store.pointMap[code] = { name, points: pts, type };
+      }
+    }
+
+    function parseRoleTable(rows) {
+      for (const r of rows) {
+        const empId = String(r['員編'] || '').trim().split('.')[0];
+        const name = String(r['姓名'] || '').trim();
+        const role = String(r['職類'] || r['職稱'] || '').trim().toUpperCase();
+        const countProd = String(r['計入產值'] || '是').trim() === '是';
+        const partTime = String(r['兼職'] || '否').trim() === '是';
+        if (empId) {
+          store.staffRoles[empId] = { name, role, countProd, partTime };
+        }
+      }
+    }
+
+    function parseScheduleWorkbook(workbook, fname, saveRaw = true) {
+      if (saveRaw && !store.rawScheduleWbs.some(x => x.fname === fname)) {
+        store.rawScheduleWbs.push({ wb: workbook, fname });
+      }
+      const m = fname.match(/(20\d{2})(0[1-9]|1[0-2])/);
+      const ym = m ? `${m[1]}-${m[2]}` : fname.slice(0, 7);
+
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+      let idxExpected = -1, idxActual = -1;
+      for (let r = 0; r < Math.min(5, matrix.length); r++) {
+        const rowStr = matrix[r].map(v => String(v || '').trim());
+        const eIdx = rowStr.findIndex(v => v.includes('A本月應上時數') || v.includes('本月應上時數'));
+        const aIdx = rowStr.findIndex(v => v.includes('本月實上時數'));
+        if (eIdx !== -1 && aIdx !== -1) {
+          idxExpected = eIdx;
+          idxActual = aIdx;
+          break;
+        }
+      }
+
+      let ptHours = 0, otHours = 0;
+      const ftStdList = [];
+
+      for (let r = 3; r < matrix.length; r++) {
+        const row = matrix[r];
+        const empId = String(row[0] || '').trim().split('.')[0];
+        if (!/^\d{4}$/.test(empId)) continue;
+
+        const expectedHrs = idxExpected !== -1 ? Number(row[idxExpected]) || 0 : 0;
+        const actualHrs = idxActual !== -1 ? Number(row[idxActual]) || 0 : 0;
+        const info = store.staffRoles[empId];
+        if (!info || !info.countProd) continue;
+
+        if (!info.partTime && expectedHrs >= 100) {
+          ftStdList.push(expectedHrs);
+        }
+        if (info.role === 'PT') ptHours += actualHrs;
+        else if (info.role === 'OT') otHours += actualHrs;
+      }
+
+      const stdHours = ftStdList.length
+        ? ftStdList.sort((a, b) => ftStdList.filter(v => v === b).length - ftStdList.filter(v => v === a).length)[0]
+        : 160;
+
+      const ptFte = stdHours > 0 ? (ptHours / stdHours) : 0;
+      const otFte = stdHours > 0 ? (otHours / stdHours) : 0;
+
+      store.schedules[ym] = {
+        ptFte: Number(ptFte.toFixed(3)),
+        otFte: Number(otFte.toFixed(3)),
+        ptHours: Number(ptHours.toFixed(1)),
+        otHours: Number(otHours.toFixed(1)),
+        stdHours
+      };
+    }
+
+    function parseSplintRows(rows) {
+      const list = [];
+      for (const r of rows) {
+        const codeField = String(r['副木名稱及代碼'] || '').trim().toUpperCase();
+        if (!codeField) continue;
+
+        const rawDate = r['日期'] || r['時間戳記'];
+        if (!rawDate) continue;
+        let dt = rawDate instanceof Date ? rawDate : new Date(String(rawDate).replace(/\//g, '-'));
+        if (isNaN(dt.getTime())) continue;
+
+        const ym = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+        const codes = codeField.match(/43\d{3}[A-Z]/g) || [];
+        let totalPts = 0;
+        codes.forEach(c => {
+          totalPts += store.pointMap[c] ? store.pointMap[c].points : 0;
+        });
+
+        list.push({ ym, codes, points: totalPts });
+      }
+      store.splints = list;
+    }
+
+    function updateMonthFilterOptions() {
+      const months = new Set();
+      if (store.isPublicMode && store.publicSnapshot) {
+        Object.keys(store.publicSnapshot.byMonth).forEach(m => months.add(m));
+      } else {
+        store.dailyRecords.forEach(r => months.add(r.ym));
+        Object.keys(store.schedules).forEach(m => months.add(m));
+      }
+      const sorted = Array.from(months).sort();
+      const sel = document.getElementById('monthFilter');
+      const current = sel.value;
+      sel.innerHTML = `<option value="ALL">全部匯入月份累計 (${sorted[0] || ''} ~ ${sorted[sorted.length - 1] || ''})</option>`;
+      sorted.forEach(m => {
+        sel.innerHTML += `<option value="${m}">${m} 月份</option>`;
+      });
+      if (sorted.includes(current)) sel.value = current;
+      if (sorted.length) {
+        const totalV = store.isPublicMode
+          ? store.publicSnapshot.byMonth['ALL'].visits
+          : store.dailyRecords.length;
+        document.getElementById('dataRangeBadge').textContent = `資料期間：${sorted[0]} 至 ${sorted[sorted.length - 1]}（業務紀錄 ${totalV.toLocaleString()} 筆）`;
+      }
+    }
+
+    function buildAggregatedSnapshot() {
+      const months = new Set(store.dailyRecords.map(r => r.ym));
+      Object.keys(store.schedules).forEach(m => months.add(m));
+      const sortedMonths = Array.from(months).sort();
+      const keys = ['ALL', ...sortedMonths];
+      const shifts = ['早班 (07:30-12:00)', '午班 (12:00-17:00)', '晚班 (17:00-21:00)'];
+
+      const byMonth = {};
+      keys.forEach(k => {
+        byMonth[k] = {
+          visits: 0,
+          ptPts: 0,
+          otTreatPts: 0,
+          splintPts: 0,
+          ptFteSum: 0,
+          otFteSum: 0,
+          ptHoursSum: 0,
+          otHoursSum: 0,
+          fteMonths: 0,
+          codeStats: {},
+          idCounts: {},
+          srcStats: {},
+          activeDatesByDow: [new Set(), new Set(), new Set(), new Set(), new Set(), new Set()],
+          // 每個 (班別 × 星期) 獨立記錄實際有看診的日期 Set（自動排除無晚班或國定假日休診日）
+          activeDatesByShiftDow: {
+            '早班 (07:30-12:00)': [new Set(), new Set(), new Set(), new Set(), new Set(), new Set()],
+            '午班 (12:00-17:00)': [new Set(), new Set(), new Set(), new Set(), new Set(), new Set()],
+            '晚班 (17:00-21:00)': [new Set(), new Set(), new Set(), new Set(), new Set(), new Set()]
+          },
+          heatmapAll: { '早班 (07:30-12:00)': [0,0,0,0,0,0], '午班 (12:00-17:00)': [0,0,0,0,0,0], '晚班 (17:00-21:00)': [0,0,0,0,0,0] },
+          heatmapSpec: {
+            ORTHO: { '早班 (07:30-12:00)': [0,0,0,0,0,0], '午班 (12:00-17:00)': [0,0,0,0,0,0], '晚班 (17:00-21:00)': [0,0,0,0,0,0] },
+            NEURO: { '早班 (07:30-12:00)': [0,0,0,0,0,0], '午班 (12:00-17:00)': [0,0,0,0,0,0], '晚班 (17:00-21:00)': [0,0,0,0,0,0] },
+            PEDS:  { '早班 (07:30-12:00)': [0,0,0,0,0,0], '午班 (12:00-17:00)': [0,0,0,0,0,0], '晚班 (17:00-21:00)': [0,0,0,0,0,0] }
+          },
+          specCounts: { ORTHO: 0, NEURO: 0, PEDS: 0, OTHER: 0 },
+          comboCounts: { bothPtOt: 0, onlyPt: 0, onlyOt: 0 },
+          complexPtCount: 0,
+          totalPtCount: 0
+        };
+      });
+
+      sortedMonths.forEach(m => {
+        if (store.schedules[m]) {
+          byMonth[m].ptFteSum = store.schedules[m].ptFte;
+          byMonth[m].otFteSum = store.schedules[m].otFte;
+          byMonth[m].ptHoursSum = store.schedules[m].ptHours;
+          byMonth[m].otHoursSum = store.schedules[m].otHours;
+          byMonth[m].fteMonths = 1;
+          byMonth['ALL'].ptFteSum += store.schedules[m].ptFte;
+          byMonth['ALL'].otFteSum += store.schedules[m].otFte;
+          byMonth['ALL'].ptHoursSum += store.schedules[m].ptHours;
+          byMonth['ALL'].otHoursSum += store.schedules[m].otHours;
+          byMonth['ALL'].fteMonths += 1;
+        }
+      });
+
+      const addRecordToBucket = (bucket, r) => {
+        bucket.visits += 1;
+        bucket.specCounts[r.specialty] = (bucket.specCounts[r.specialty] || 0) + 1;
+
+        if (r.ptCode && r.otCode) bucket.comboCounts.bothPtOt += 1;
+        else if (r.ptCode) bucket.comboCounts.onlyPt += 1;
+        else if (r.otCode) bucket.comboCounts.onlyOt += 1;
+
+        let recPts = 0;
+        if (r.ptCode) {
+          const info = store.pointMap[r.ptCode] || { name: r.ptCode, points: 0, type: 'PT' };
+          bucket.ptPts += info.points;
+          recPts += info.points;
+          bucket.totalPtCount += 1;
+          if (['42011B', '42014B'].includes(r.ptCode)) bucket.complexPtCount += 1;
+          if (!bucket.codeStats[r.ptCode]) bucket.codeStats[r.ptCode] = { code: r.ptCode, name: info.name, type: 'PT', unitPts: info.points, count: 0, totalPts: 0 };
+          bucket.codeStats[r.ptCode].count += 1;
+          bucket.codeStats[r.ptCode].totalPts += info.points;
+        }
+        if (r.otCode) {
+          const info = store.pointMap[r.otCode] || { name: r.otCode, points: 0, type: 'OT' };
+          bucket.otTreatPts += info.points;
+          recPts += info.points;
+          if (!bucket.codeStats[r.otCode]) bucket.codeStats[r.otCode] = { code: r.otCode, name: info.name, type: 'OT', unitPts: info.points, count: 0, totalPts: 0 };
+          bucket.codeStats[r.otCode].count += 1;
+          bucket.codeStats[r.otCode].totalPts += info.points;
+        }
+
+        bucket.idCounts[r.identity] = (bucket.idCounts[r.identity] || 0) + 1;
+        if (!bucket.srcStats[r.source]) bucket.srcStats[r.source] = { source: r.source, visits: 0, pts: 0 };
+        bucket.srcStats[r.source].visits += 1;
+        bucket.srcStats[r.source].pts += recPts;
+
+        if (r.dow >= 1 && r.dow <= 6) {
+          const dIdx = r.dow - 1;
+          bucket.activeDatesByDow[dIdx].add(r.ymd);
+          if (bucket.heatmapAll[r.shift]) {
+            bucket.heatmapAll[r.shift][dIdx] += 1;
+            bucket.activeDatesByShiftDow[r.shift][dIdx].add(r.ymd);
+            if (bucket.heatmapSpec[r.specialty]) {
+              bucket.heatmapSpec[r.specialty][r.shift][dIdx] += 1;
+            }
+          }
+        }
+      };
+
+      for (const r of store.dailyRecords) {
+        addRecordToBucket(byMonth['ALL'], r);
+        if (byMonth[r.ym]) addRecordToBucket(byMonth[r.ym], r);
+      }
+
+      for (const s of store.splints) {
+        const targets = [byMonth['ALL']];
+        if (byMonth[s.ym]) targets.push(byMonth[s.ym]);
+        targets.forEach(b => {
+          b.splintPts += s.points;
+          s.codes.forEach(c => {
+            const info = store.pointMap[c] || { name: c, points: 0, type: 'OT' };
+            if (!b.codeStats[c]) b.codeStats[c] = { code: c, name: info.name, type: 'OT', unitPts: info.points, count: 0, totalPts: 0 };
+            b.codeStats[c].count += 1;
+            b.codeStats[c].totalPts += info.points;
+          });
+        });
+      }
+
+      // 轉換日期 Set 為實際開診診數陣列
+      keys.forEach(k => {
+        byMonth[k].dowDayCounts = byMonth[k].activeDatesByDow.map(set => set.size || 0);
+        byMonth[k].shiftDowCounts = {};
+        shifts.forEach(s => {
+          byMonth[k].shiftDowCounts[s] = byMonth[k].activeDatesByShiftDow[s].map(set => set.size);
+        });
+        delete byMonth[k].activeDatesByDow;
+        delete byMonth[k].activeDatesByShiftDow;
+      });
+
+      const validTags = new Set(['IC', '2', '3', '4', '5', '6']);
+      const patientMap = {};
+      for (const r of store.dailyRecords) {
+        if (!r.pid || !validTags.has(r.countTag)) continue;
+        if (!patientMap[r.pid]) {
+          patientMap[r.pid] = { pid: r.pid, name: r.pname, source: r.source, validDates: new Set(), ptDates: new Set(), otDates: new Set(), lastDate: r.ymd };
+        }
+        const p = patientMap[r.pid];
+        p.validDates.add(r.ymd);
+        if (r.ptCode) p.ptDates.add(r.ymd);
+        if (r.otCode) p.otDates.add(r.ymd);
+        if (r.ymd > p.lastDate) { p.lastDate = r.ymd; p.source = r.source; }
+      }
+      const nhiList = Object.values(patientMap).map(p => ({
+        pid: p.pid, name: p.name, source: p.source,
+        totalVisits: p.validDates.size, ptDays: p.ptDates.size, otDays: p.otDates.size, lastDate: p.lastDate
+      })).sort((a, b) => b.totalVisits - a.totalVisits);
+
+      let churnList = [];
+      if (sortedMonths.length >= 2) {
+        const lastM = sortedMonths[sortedMonths.length - 1];
+        const prevM = sortedMonths[sortedMonths.length - 2];
+        const prevCounts = {};
+        const lastPids = new Set();
+        store.dailyRecords.forEach(r => {
+          if (r.ym === lastM) lastPids.add(r.pid);
+          if (r.ym === prevM) {
+            if (!prevCounts[r.pid]) prevCounts[r.pid] = { pid: r.pid, name: r.pname, source: r.source, cnt: 0, lastDate: r.ymd, prevM };
+            prevCounts[r.pid].cnt += 1;
+            if (r.ymd > prevCounts[r.pid].lastDate) prevCounts[r.pid].lastDate = r.ymd;
+          }
+        });
+        churnList = Object.values(prevCounts)
+          .filter(p => p.cnt >= 6 && !lastPids.has(p.pid))
+          .sort((a, b) => b.cnt - a.cnt)
+          .slice(0, 50)
+          .map(p => ({ ...p, yearTotal: nhiList.find(x => x.pid === p.pid)?.totalVisits || p.cnt }));
+      }
+
+      return { generatedAt: new Date().toISOString(), months: sortedMonths, byMonth, nhiList, churnList, historyData: store.historyData };
+    }
+
+    function exportPublicDataJs() {
+      const snap = buildAggregatedSnapshot();
+      const maskName = name => {
+        if (!name) return '***';
+        if (name.includes('O') || name.includes('○')) return name;
+        return name.length <= 2 ? name[0] + '○' : name[0] + '○' + name.slice(-1);
+      };
+
+      const safeSnap = {
+        generatedAt: snap.generatedAt,
+        months: snap.months,
+        byMonth: snap.byMonth,
+        historyData: snap.historyData,
+        nhiList: snap.nhiList.filter(p => p.totalVisits >= 150).map(p => ({
+          pid: '******',
+          name: maskName(p.name),
+          source: p.source,
+          totalVisits: p.totalVisits,
+          ptDays: p.ptDays,
+          otDays: p.otDays,
+          lastDate: p.lastDate
+        })),
+        churnList: snap.churnList.map(p => ({
+          pid: '******',
+          name: maskName(p.name),
+          source: p.source,
+          cnt: p.cnt,
+          prevM: p.prevM,
+          yearTotal: p.yearTotal,
+          lastDate: p.lastDate
+        }))
+      };
+
+      const jsContent = `// 復健科業務量分析公開統計檔（已去除病人個資，可安全上傳至 GitHub Pages）\n// 產生時間：${new Date().toLocaleString('zh-TW')}\nwindow.__PUBLIC_DATA__ = ${JSON.stringify(safeSnap)};\n`;
+      const blob = new Blob([jsContent], { type: 'application/javascript;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'data.js';
+      a.click();
+    }
+
+    function recalculateAndRender() {
+      let snap;
+      if (store.isPublicMode && store.publicSnapshot) {
+        snap = store.publicSnapshot;
+      } else {
+        snap = buildAggregatedSnapshot();
+      }
+
+      const selectedMonth = document.getElementById('monthFilter').value;
+      const bucket = snap.byMonth[selectedMonth] || snap.byMonth['ALL'];
+      if (!bucket) {
+        renderHistorySection(snap);
+        return;
+      }
+
+      const periodOtTotal = bucket.otTreatPts + bucket.splintPts;
+      const grandTotal = bucket.ptPts + periodOtTotal;
+      const avgPtFte = bucket.fteMonths ? (bucket.ptFteSum / bucket.fteMonths) : 0;
+      const avgOtFte = bucket.fteMonths ? (bucket.otFteSum / bucket.fteMonths) : 0;
+      const ptPerFteMonth = bucket.ptFteSum > 0 ? Math.round(bucket.ptPts / bucket.ptFteSum) : 0;
+      const otPerFteMonth = bucket.otFteSum > 0 ? Math.round(periodOtTotal / bucket.otFteSum) : 0;
+
+      document.getElementById('kpi-visits').textContent = bucket.visits.toLocaleString();
+      document.getElementById('kpi-total-pts').textContent = `登記總點數：${grandTotal.toLocaleString()} 點（含副木 ${bucket.splintPts.toLocaleString()} 點）`;
+      document.getElementById('kpi-pt-pts').textContent = bucket.ptPts.toLocaleString();
+      document.getElementById('kpi-pt-fte').textContent = `實際人力：${avgPtFte.toFixed(2)} FTE｜人均：${ptPerFteMonth.toLocaleString()} 點/月`;
+      document.getElementById('kpi-ot-pts').textContent = periodOtTotal.toLocaleString();
+      document.getElementById('kpi-ot-fte').textContent = `實際人力：${avgOtFte.toFixed(2)} FTE｜人均：${otPerFteMonth.toLocaleString()} 點/月`;
+
+      store.nhiList = snap.nhiList || [];
+      store.churnList = snap.churnList || [];
+      const over180 = store.nhiList.filter(p => p.totalVisits >= 180).length;
+      const warn150 = store.nhiList.filter(p => p.totalVisits >= 150 && p.totalVisits < 180).length;
+      document.getElementById('kpi-over180').textContent = over180;
+      document.getElementById('kpi-warn150').textContent = `警戒區（150~179次）：${warn150} 人`;
+
+      store._currentSnap = snap;
+      store._currentBucket = bucket;
+
+      renderHistorySection(snap);
+      renderProductivitySection(snap);
+      renderSpecialtySection();
+      renderHeatmapSection(bucket);
+      renderCodesSection(bucket.codeStats, grandTotal);
+      renderDemographicsSection(bucket);
+      renderNhiTable();
+      renderInsightsSection(bucket);
+    }
+
+    function renderHistorySection(snap = store._currentSnap) {
+      const hist = (snap && snap.historyData) ? snap.historyData : store.historyData;
+      const years = Object.keys(hist).sort();
+      const latestYr = years[years.length - 1] || '115';
+      const latestObj = hist[latestYr];
+      const validMonthIndices = [];
+      latestObj.pt.forEach((v, idx) => { if (v !== null && v > 0) validMonthIndices.push(idx); });
+
+      const sumRange = (yrObj, indices, includePac = false) => {
+        let total = 0;
+        indices.forEach(i => {
+          total += (yrObj.pt[i] || 0) + (yrObj.ot[i] || 0) + (yrObj.splint[i] || 0) + (includePac ? (yrObj.pac[i] || 0) : 0);
+        });
+        return total;
+      };
+
+      const kpiRow = document.getElementById('historyKpiRow');
+      kpiRow.innerHTML = years.map((yr, idx) => {
+        const yObj = hist[yr];
+        const subSum = sumRange(yObj, validMonthIndices, false);
+        const fullSum = sumRange(yObj, [0,1,2,3,4,5,6,7,8,9,10,11], false);
+        const isLatest = yr === latestYr;
+        const diffPrev = idx > 0 ? sumRange(hist[years[idx - 1]], validMonthIndices, false) : 0;
+        const growth = diffPrev ? (((subSum - diffPrev) / diffPrev) * 100).toFixed(1) : null;
+
+        return `
+          <div class="card p-4 ${isLatest ? 'border-l-4 border-l-blue-600 bg-blue-50/30' : 'border-l-4 border-l-slate-400'}">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-600">${yObj.label} 1–${validMonthIndices.length}月同期</span>
+              ${growth !== null ? `<span class="text-xs font-bold px-2 py-0.5 rounded ${Number(growth) >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">${Number(growth) >= 0 ? '+' : ''}${growth}% YoY</span>` : '<span class="text-xs text-slate-400">基準年</span>'}
+            </div>
+            <div class="mt-1.5 text-xl font-bold text-slate-800">${subSum.toLocaleString()} <span class="text-xs font-normal text-slate-500">點</span></div>
+            <div class="text-xs text-slate-500 mt-1">${isLatest ? '統計至 ' + validMonthIndices.length + ' 月（不含 PAC）' : '全年度總計：' + fullSum.toLocaleString() + ' 點'}</div>
+          </div>`;
+      }).join('');
+
+      const metric = document.getElementById('histMetricSelect').value;
+      const monthLabels = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+      const palette = ['#94a3b8', '#64748b', '#0ea5e9', '#2563eb'];
+
+      const datasets = years.map((yr, idx) => {
+        const yObj = hist[yr];
+        const series = monthLabels.map((_, mIdx) => {
+          if (yObj.pt[mIdx] === null) return null;
+          if (metric === 'PT') return yObj.pt[mIdx];
+          if (metric === 'OT_ALL') return (yObj.ot[mIdx] || 0) + (yObj.splint[mIdx] || 0);
+          if (metric === 'SPLINT') return yObj.splint[mIdx] || 0;
+          if (metric === 'DAILY_AVG') return yObj.dailyAvg[mIdx];
+          if (metric === 'TOTAL_PAC') return (yObj.pt[mIdx] || 0) + (yObj.ot[mIdx] || 0) + (yObj.splint[mIdx] || 0) + (yObj.pac[mIdx] || 0);
+          return (yObj.pt[mIdx] || 0) + (yObj.ot[mIdx] || 0) + (yObj.splint[mIdx] || 0);
+        });
+        const isLatest = yr === latestYr;
+        return {
+          label: yObj.label,
+          data: series,
+          borderColor: palette[idx % palette.length],
+          backgroundColor: palette[idx % palette.length],
+          borderWidth: isLatest ? 3 : 2,
+          borderDash: isLatest ? [] : [4, 3],
+          tension: 0.25
+        };
+      });
+      drawChart('chartHistoryYoY', 'line', monthLabels, datasets);
+
+      const recBody = document.getElementById('tableReconcileBody');
+      recBody.innerHTML = '';
+      const recLabels = [], recActualArr = [], recRegArr = [];
+      let sumRegPt = 0, sumActPt = 0, sumRegOt = 0, sumActOt = 0, sumRegSp = 0, sumActSp = 0;
+
+      for (let mIdx = 0; mIdx < 12; mIdx++) {
+        const ymKey = `2026-${String(mIdx + 1).padStart(2, '0')}`;
+        const reg = (snap && snap.byMonth && snap.byMonth[ymKey]) ? snap.byMonth[ymKey] : { ptPts: 0, otTreatPts: 0, splintPts: 0 };
+        const actPt = latestObj.pt[mIdx];
+        if (actPt === null && reg.ptPts === 0) continue;
+
+        const aPt = actPt || 0;
+        const aOt = latestObj.ot[mIdx] || 0;
+        const aSp = latestObj.splint[mIdx] || 0;
+        const diffPt = aPt - reg.ptPts;
+        const diffOt = aOt - reg.otTreatPts;
+        const diffAll = (aPt + aOt + aSp) - (reg.ptPts + reg.otTreatPts + reg.splintPts);
+
+        sumRegPt += reg.ptPts; sumActPt += aPt;
+        sumRegOt += reg.otTreatPts; sumActOt += aOt;
+        sumRegSp += reg.splintPts; sumActSp += aSp;
+
+        recLabels.push(`${mIdx + 1}月`);
+        recActualArr.push(aPt + aOt + aSp);
+        recRegArr.push(reg.ptPts + reg.otTreatPts + reg.splintPts);
+
+        const fmtDiff = v => `<span class="font-semibold ${v > 0 ? 'text-emerald-600' : (v < 0 ? 'text-rose-600' : 'text-slate-400')}">${v > 0 ? '+' : ''}${v.toLocaleString()}</span>`;
+
+        recBody.innerHTML += `
+          <tr class="hover:bg-slate-50">
+            <td class="py-2 px-3 font-semibold">${ymKey}</td>
+            <td class="py-2 px-3 text-right">${reg.ptPts.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right font-medium text-indigo-700">${aPt.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right">${fmtDiff(diffPt)}</td>
+            <td class="py-2 px-3 text-right">${reg.otTreatPts.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right font-medium text-emerald-700">${aOt.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right">${fmtDiff(diffOt)}</td>
+            <td class="py-2 px-3 text-right">${reg.splintPts.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right">${aSp.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right font-bold">${fmtDiff(diffAll)}</td>
+          </tr>`;
+      }
+
+      if (recLabels.length) {
+        const fmtDiff = v => `<span class="font-bold ${v > 0 ? 'text-emerald-700' : (v < 0 ? 'text-rose-700' : 'text-slate-600')}">${v > 0 ? '+' : ''}${v.toLocaleString()}</span>`;
+        recBody.innerHTML += `
+          <tr class="bg-slate-100 font-bold border-t-2 border-slate-300">
+            <td class="py-2.5 px-3">累計合計</td>
+            <td class="py-2.5 px-3 text-right">${sumRegPt.toLocaleString()}</td>
+            <td class="py-2.5 px-3 text-right text-indigo-800">${sumActPt.toLocaleString()}</td>
+            <td class="py-2.5 px-3 text-right">${fmtDiff(sumActPt - sumRegPt)}</td>
+            <td class="py-2.5 px-3 text-right">${sumRegOt.toLocaleString()}</td>
+            <td class="py-2.5 px-3 text-right text-emerald-800">${sumActOt.toLocaleString()}</td>
+            <td class="py-2.5 px-3 text-right">${fmtDiff(sumActOt - sumRegOt)}</td>
+            <td class="py-2.5 px-3 text-right">${sumRegSp.toLocaleString()}</td>
+            <td class="py-2.5 px-3 text-right">${sumActSp.toLocaleString()}</td>
+            <td class="py-2.5 px-3 text-right">${fmtDiff((sumActPt + sumActOt + sumActSp) - (sumRegPt + sumRegOt + sumRegSp))}</td>
+          </tr>`;
+      }
+
+      drawChart('chartReconcile2026', 'bar', recLabels, [
+        { label: '實際申報總點數 (PT+OT+副木)', data: recActualArr, backgroundColor: '#2563eb', borderRadius: 4 },
+        { label: '每日登記換算總點數', data: recRegArr, backgroundColor: '#94a3b8', borderRadius: 4 }
+      ]);
+
+      const matBody = document.getElementById('tableHistoryMatrixBody');
+      matBody.innerHTML = '';
+      years.forEach(yr => {
+        const yObj = hist[yr];
+        const rowVals = monthLabels.map((_, i) => yObj.pt[i] === null ? null : ((yObj.pt[i] || 0) + (yObj.ot[i] || 0) + (yObj.splint[i] || 0)));
+        const sub10 = sumRange(yObj, validMonthIndices, false);
+        const full12 = sumRange(yObj, [0,1,2,3,4,5,6,7,8,9,10,11], false);
+
+        matBody.innerHTML += `
+          <tr class="hover:bg-slate-50 ${yr === latestYr ? 'bg-blue-50/40 font-semibold' : ''}">
+            <td class="py-2 px-2 text-left font-bold text-slate-800">${yObj.label}</td>
+            ${rowVals.map(v => `<td class="py-2 px-2">${v !== null ? v.toLocaleString() : '-'}</td>`).join('')}
+            <td class="py-2 px-2 bg-slate-100 font-bold text-blue-700">${sub10.toLocaleString()}</td>
+            <td class="py-2 px-2 bg-slate-100 font-bold">${full12.toLocaleString()}</td>
+          </tr>`;
+      });
+    }
+
+    function renderProductivitySection(snap) {
+      const months = snap.months || [];
+      const tbody = document.getElementById('tableProductivityBody');
+      tbody.innerHTML = '';
+
+      const ptTotals = [], otTotals = [], ptPerFtes = [], otPerFtes = [];
+
+      months.forEach(m => {
+        const b = snap.byMonth[m];
+        const otAll = b.otTreatPts + b.splintPts;
+        const ptAvg = b.ptFteSum > 0 ? Math.round(b.ptPts / b.ptFteSum) : 0;
+        const otAvg = b.otFteSum > 0 ? Math.round(otAll / b.otFteSum) : 0;
+        const ptHrRate = b.ptHoursSum > 0 ? (b.ptPts / b.ptHoursSum).toFixed(1) : '-';
+        const otHrRate = b.otHoursSum > 0 ? (otAll / b.otHoursSum).toFixed(1) : '-';
+
+        ptTotals.push(b.ptPts);
+        otTotals.push(otAll);
+        ptPerFtes.push(ptAvg);
+        otPerFtes.push(otAvg);
+
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50">
+            <td class="py-2 px-3 font-semibold">${m}</td>
+            <td class="py-2 px-3 text-right text-slate-500">${b.ptHoursSum ? b.ptHoursSum.toFixed(1) : '-'}</td>
+            <td class="py-2 px-3 text-right font-semibold text-indigo-700">${b.ptFteSum ? b.ptFteSum.toFixed(2) : '-'}</td>
+            <td class="py-2 px-3 text-right">${b.ptPts.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right font-bold">${ptAvg ? ptAvg.toLocaleString() : '-'}</td>
+            <td class="py-2 px-3 text-right text-slate-600">${ptHrRate}</td>
+            <td class="py-2 px-3 text-right text-slate-500">${b.otHoursSum ? b.otHoursSum.toFixed(1) : '-'}</td>
+            <td class="py-2 px-3 text-right font-semibold text-emerald-700">${b.otFteSum ? b.otFteSum.toFixed(2) : '-'}</td>
+            <td class="py-2 px-3 text-right">${otAll.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right font-bold">${otAvg ? otAvg.toLocaleString() : '-'}</td>
+            <td class="py-2 px-3 text-right text-slate-600">${otHrRate}</td>
+          </tr>`;
+      });
+
+      drawChart('chartMonthlyRevenue', 'bar', months, [
+        { label: 'PT 登記申報點數', data: ptTotals, backgroundColor: '#4f46e5', borderRadius: 4 },
+        { label: 'OT 登記申報點數 (含副木)', data: otTotals, backgroundColor: '#10b981', borderRadius: 4 }
+      ]);
+
+      drawChart('chartMonthlyPerFte', 'line', months, [
+        { label: 'PT 人均月產值 (點/FTE)', data: ptPerFtes, borderColor: '#4f46e5', backgroundColor: '#4f46e5', tension: 0.25 },
+        { label: 'OT 人均月產值 (點/FTE)', data: otPerFtes, borderColor: '#10b981', backgroundColor: '#10b981', tension: 0.25 }
+      ]);
+    }
+
+    function renderSpecialtySection() {
+      const snap = store._currentSnap;
+      const bucket = store._currentBucket;
+      if (!snap || !bucket) return;
+
+      const sc = bucket.specCounts;
+      drawChart('chartSpecialtyPie', 'doughnut', ['骨科 (純PT)', '神經科 (含OT)', '小兒復健', '其他'], [{
+        data: [sc.ORTHO, sc.NEURO, sc.PEDS, sc.OTHER],
+        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#94a3b8']
+      }]);
+
+      const months = snap.months || [];
+      const orthoArr = [], neuroArr = [], pedsArr = [];
+      const tbody = document.getElementById('tableSpecialtyMonthlyBody');
+      tbody.innerHTML = '';
+
+      months.forEach(m => {
+        const mb = snap.byMonth[m];
+        const msc = mb.specCounts;
+        const tot = mb.visits || 1;
+        orthoArr.push(msc.ORTHO);
+        neuroArr.push(msc.NEURO);
+        pedsArr.push(msc.PEDS);
+
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50">
+            <td class="py-2 px-3 font-semibold">${m}</td>
+            <td class="py-2 px-3 text-right font-medium text-blue-700">${msc.ORTHO.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right text-slate-500">${((msc.ORTHO / tot) * 100).toFixed(1)}%</td>
+            <td class="py-2 px-3 text-right font-medium text-emerald-700">${msc.NEURO.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right text-slate-500">${((msc.NEURO / tot) * 100).toFixed(1)}%</td>
+            <td class="py-2 px-3 text-right font-medium text-amber-700">${msc.PEDS.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right text-slate-500">${((msc.PEDS / tot) * 100).toFixed(1)}%</td>
+            <td class="py-2 px-3 text-right text-slate-400">${msc.OTHER.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right font-bold">${mb.visits.toLocaleString()}</td>
+          </tr>`;
+      });
+
+      drawChart('chartSpecialtyMonthly', 'line', months, [
+        { label: '骨科 (純PT) 人次', data: orthoArr, borderColor: '#3b82f6', backgroundColor: '#3b82f6', tension: 0.25 },
+        { label: '神經科 (含OT) 人次', data: neuroArr, borderColor: '#10b981', backgroundColor: '#10b981', tension: 0.25 },
+        { label: '小兒復健人次', data: pedsArr, borderColor: '#f59e0b', backgroundColor: '#f59e0b', tension: 0.25 }
+      ]);
+
+      const specKey = document.getElementById('specHeatmapFilter').value;
+      const specMatrix = bucket.heatmapSpec[specKey];
+      renderAverageHeatmapTable('specHeatmapTable', specMatrix, bucket);
+    }
+
+    function renderHeatmapSection(bucket) {
+      renderAverageHeatmapTable('heatmapTable', bucket.heatmapAll, bucket);
+
+      const shifts = ['早班 (07:30-12:00)', '午班 (12:00-17:00)', '晚班 (17:00-21:00)'];
+      drawChart('chartShiftBar', 'bar', shifts, [{
+        label: '區間累計總人次',
+        data: shifts.map(s => bucket.heatmapAll[s].reduce((a, b) => a + b, 0)),
+        backgroundColor: ['#3b82f6', '#0ea5e9', '#6366f1'],
+        borderRadius: 6
+      }]);
+    }
+
+    // 精準計算每個（班別 × 星期）的「實際有開診診數」平均（自動排除國定假日休診或無晚班時段）
+    function renderAverageHeatmapTable(tableId, matrix, bucket) {
+      const shifts = ['早班 (07:30-12:00)', '午班 (12:00-17:00)', '晚班 (17:00-21:00)'];
+      const days = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+      const dowDayCounts = bucket.dowDayCounts || [1,1,1,1,1,1];
+      const shiftDowCounts = bucket.shiftDowCounts || null;
+
+      let maxAvg = 0.1;
+      const avgMatrix = {};
+      const denomMatrix = {};
+
+      shifts.forEach(s => {
+        avgMatrix[s] = [];
+        denomMatrix[s] = [];
+        matrix[s].forEach((total, dIdx) => {
+          // 優先使用該班別×星期實際有出勤的天數；若無出勤 (0) 則該格為休診
+          const activeDays = shiftDowCounts ? shiftDowCounts[s][dIdx] : (total > 0 ? dowDayCounts[dIdx] : 0);
+          denomMatrix[s].push(activeDays);
+          const avg = activeDays > 0 ? (total / activeDays) : 0;
+          if (avg > maxAvg) maxAvg = avg;
+          avgMatrix[s].push(avg);
+        });
+      });
+
+      const table = document.getElementById(tableId);
+      let html = `<thead><tr class="bg-slate-100 text-slate-700"><th class="py-2.5 px-3 text-left">班別時段</th>`;
+      days.forEach((d, idx) => {
+        html += `<th class="py-2.5 px-3">${d}<div class="text-[11px] font-normal text-slate-500">(全天開診 ${dowDayCounts[idx]} 日)</div></th>`;
+      });
+      html += `<th class="py-2.5 px-3 bg-slate-200">開診日平均</th></tr></thead><tbody>`;
+
+      shifts.forEach(s => {
+        html += `<tr class="border-b border-slate-200"><td class="py-3 px-3 font-bold text-left bg-slate-50">${s}</td>`;
+        let activeRowSum = 0;
+        let activeCols = 0;
+
+        avgMatrix[s].forEach((avgVal, dIdx) => {
+          const rawTotal = matrix[s][dIdx];
+          const activeDays = denomMatrix[s][dIdx];
+
+          if (activeDays === 0) {
+            html += `
+              <td class="py-2.5 px-3 bg-slate-100 text-slate-400 border border-white">
+                <div class="text-sm font-medium">休診</div>
+                <div class="text-[10px]">(無出勤 0 診)</div>
+              </td>`;
+            return;
+          }
+
+          activeRowSum += avgVal;
+          activeCols += 1;
+
+          const ratio = avgVal / maxAvg;
+          let bg = 'bg-blue-50 text-slate-700';
+          let subText = 'text-slate-400';
+          if (ratio > 0.75) { bg = 'bg-blue-600 text-white font-bold'; subText = 'text-blue-100'; }
+          else if (ratio > 0.45) { bg = 'bg-blue-300 text-blue-950 font-semibold'; subText = 'text-blue-800'; }
+          else if (ratio > 0.2) { bg = 'bg-blue-100 text-blue-900'; subText = 'text-blue-700'; }
+
+          html += `
+            <td class="py-2.5 px-3 ${bg} border border-white">
+              <div class="text-base">${avgVal.toFixed(1)} <span class="text-[11px] font-normal">人/診</span></div>
+              <div class="text-[10px] ${subText}">(總 ${rawTotal.toLocaleString()} ÷ ${activeDays} 診)</div>
+            </td>`;
+        });
+
+        const rowAvg = activeCols > 0 ? (activeRowSum / activeCols).toFixed(1) : '0.0';
+        html += `<td class="py-3 px-3 font-bold bg-slate-100">${rowAvg} <span class="text-xs font-normal text-slate-500">人/診</span></td></tr>`;
+      });
+      html += `</tbody>`;
+      table.innerHTML = html;
+    }
+
+    function renderCodesSection(codeStats, grandTotalPts) {
+      const list = Object.values(codeStats).sort((a, b) => b.totalPts - a.totalPts);
+      const tbody = document.getElementById('tableCodesBody');
+      tbody.innerHTML = '';
+
+      list.forEach(item => {
+        const share = grandTotalPts ? ((item.totalPts / grandTotalPts) * 100).toFixed(1) : '0.0';
+        const badge = item.type === 'PT'
+          ? '<span class="px-2 py-0.5 rounded text-xs font-bold bg-indigo-100 text-indigo-700">PT</span>'
+          : '<span class="px-2 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-700">OT</span>';
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50">
+            <td class="py-2 px-3">${badge}</td>
+            <td class="py-2 px-3 font-mono font-semibold">${item.code}</td>
+            <td class="py-2 px-3">${item.name}</td>
+            <td class="py-2 px-3 text-right">${item.unitPts.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right">${item.count.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right font-bold">${item.totalPts.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right text-slate-500">${share}%</td>
+          </tr>`;
+      });
+
+      const ptList = list.filter(i => i.type === 'PT');
+      const otList = list.filter(i => i.type === 'OT');
+
+      drawChart('chartPtCodes', 'bar', ptList.map(i => `${i.code} ${i.name.slice(0, 8)}`), [
+        { label: '申報總點數', data: ptList.map(i => i.totalPts), backgroundColor: '#6366f1', borderRadius: 4 }
+      ], { indexAxis: 'y' });
+
+      drawChart('chartOtCodes', 'bar', otList.map(i => `${i.code} ${i.name.slice(0, 8)}`), [
+        { label: '申報總點數', data: otList.map(i => i.totalPts), backgroundColor: '#10b981', borderRadius: 4 }
+      ], { indexAxis: 'y' });
+    }
+
+    function renderDemographicsSection(bucket) {
+      const idSorted = Object.entries(bucket.idCounts).sort((a, b) => b[1] - a[1]);
+      drawChart('chartIdentity', 'doughnut', idSorted.map(x => x[0]), [{
+        data: idSorted.map(x => x[1]),
+        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#64748b']
+      }]);
+
+      const srcSorted = Object.values(bucket.srcStats).sort((a, b) => b.visits - a.visits);
+      drawChart('chartSource', 'doughnut', srcSorted.map(x => x.source), [{
+        data: srcSorted.map(x => x.visits),
+        backgroundColor: ['#2563eb', '#059669', '#d97706', '#7c3aed', '#db2777', '#0891b2', '#4f46e5', '#64748b']
+      }]);
+
+      const tbody = document.getElementById('tableSourceBody');
+      tbody.innerHTML = '';
+      const totalV = bucket.visits || 1;
+      srcSorted.forEach(s => {
+        const avgPts = s.visits ? Math.round(s.pts / s.visits) : 0;
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50">
+            <td class="py-2 px-3 font-semibold">${s.source}</td>
+            <td class="py-2 px-3 text-right">${s.visits.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right text-slate-500">${((s.visits / totalV) * 100).toFixed(1)}%</td>
+            <td class="py-2 px-3 text-right font-medium">${s.pts.toLocaleString()}</td>
+            <td class="py-2 px-3 text-right font-bold text-blue-700">${avgPts.toLocaleString()} 點</td>
+          </tr>`;
+      });
+    }
+
+    function renderNhiTable() {
+      const kw = document.getElementById('nhiSearch').value.trim().toLowerCase();
+      const filterMode = document.getElementById('nhiStatusFilter').value;
+      let filtered = store.nhiList || [];
+
+      if (filterMode === 'OVER') filtered = filtered.filter(p => p.totalVisits >= 180);
+      else if (filterMode === 'WARN') filtered = filtered.filter(p => p.totalVisits >= 150);
+      else filtered = filtered.slice(0, 300);
+
+      if (kw) {
+        filtered = filtered.filter(p => p.pid.toLowerCase().includes(kw) || p.name.toLowerCase().includes(kw));
+      }
+
+      const tbody = document.getElementById('tableNhiBody');
+      tbody.innerHTML = '';
+      filtered.forEach(p => {
+        const remain = 180 - p.totalVisits;
+        const badge = p.totalVisits >= 180
+          ? '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700">紅燈超標</span>'
+          : (p.totalVisits >= 150
+            ? '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">黃燈警戒</span>'
+            : '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">正常</span>');
+
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50">
+            <td class="py-2 px-3">${badge}</td>
+            <td class="py-2 px-3 font-mono">${p.pid}</td>
+            <td class="py-2 px-3 font-semibold">${p.name}</td>
+            <td class="py-2 px-3 text-slate-600">${p.source}</td>
+            <td class="py-2 px-3 text-right font-bold text-slate-900">${p.totalVisits} 次</td>
+            <td class="py-2 px-3 text-right font-semibold ${remain <= 0 ? 'text-rose-600' : 'text-amber-600'}">${remain <= 0 ? '已超過 ' + Math.abs(remain) + ' 次' : '剩 ' + remain + ' 次'}</td>
+            <td class="py-2 px-3 text-right">${p.ptDays}</td>
+            <td class="py-2 px-3 text-right">${p.otDays}</td>
+            <td class="py-2 px-3 text-slate-500">${p.lastDate}</td>
+          </tr>`;
+      });
+    }
+
+    function exportNhiCsv() {
+      const rows = [['狀態', '病歷號', '姓名', '來源', '年度健保次數', 'PT日數', 'OT日數', '最近就診日']];
+      (store.nhiList || []).filter(p => p.totalVisits >= 150).forEach(p => {
+        rows.push([p.totalVisits >= 180 ? '超標(>=180)' : '警戒(150-179)', p.pid, p.name, p.source, p.totalVisits, p.ptDays, p.otDays, p.lastDate]);
+      });
+      const csv = '\uFEFF' + rows.map(r => r.join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `復健科健保180次管控預警名單_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+    }
+
+    function renderInsightsSection(bucket) {
+      const container = document.getElementById('insightsContainer');
+      if (!bucket || !bucket.visits) {
+        container.innerHTML = '<div class="card p-5 text-sm text-slate-500">請至頁面最下方匯入業務紀錄，或載入公開統計檔以產生智慧管理建議。</div>';
+        return;
+      }
+
+      const total = bucket.visits;
+      const bothRate = ((bucket.comboCounts.bothPtOt / total) * 100).toFixed(1);
+      const onlyPtRate = ((bucket.comboCounts.onlyPt / total) * 100).toFixed(1);
+
+      const morningSum = bucket.heatmapAll['早班 (07:30-12:00)'].reduce((a, b) => a + b, 0);
+      const afternoonSum = bucket.heatmapAll['午班 (12:00-17:00)'].reduce((a, b) => a + b, 0);
+      const eveningSum = bucket.heatmapAll['晚班 (17:00-21:00)'].reduce((a, b) => a + b, 0);
+
+      const complexRate = bucket.totalPtCount ? ((bucket.complexPtCount / bucket.totalPtCount) * 100).toFixed(1) : 0;
+
+      container.innerHTML = `
+        <div class="card p-5 border-t-4 border-t-blue-600">
+          <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-2">
+            <i data-lucide="users" class="w-4 h-4 text-blue-600"></i> 跨職類轉介（PT + OT 協同治療）潛力
+          </h4>
+          <p class="text-sm text-slate-600 leading-relaxed">
+            目前就診人次中，<b>${bothRate}%</b> 同時接受 PT 與 OT 治療（神經科主力），僅做 PT（骨科為主）佔 <b>${onlyPtRate}%</b>。
+            建議針對中風、腦傷、上肢骨折及發展遲緩個案，加強 PT 評估後轉介 OT 介入日常功能訓練與副木評估，可同步提升患者復原品質與 OT 職類產值。
+          </p>
+        </div>
+
+        <div class="card p-5 border-t-4 border-t-amber-500">
+          <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-2">
+            <i data-lucide="clock" class="w-4 h-4 text-amber-500"></i> 早午晚人力排班與分流建議
+          </h4>
+          <p class="text-sm text-slate-600 leading-relaxed">
+            早班佔 <b>${((morningSum/total)*100).toFixed(1)}%</b>、午班佔 <b>${((afternoonSum/total)*100).toFixed(1)}%</b>、晚班佔 <b>${((eveningSum/total)*100).toFixed(1)}%</b>。
+            早班為全科最高負荷時段，建議將「護理之家 (NH)」及「車載路線」病患適度分流至午班離峰時段，並確保早班尖峰時段有充足治療師在崗，避免報到塞車與等候過久。
+          </p>
+        </div>
+
+        <div class="card p-5 border-t-4 border-t-emerald-600">
+          <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-2">
+            <i data-lucide="trending-up" class="w-4 h-4 text-emerald-600"></i> 治療複雜度與健保申報結構
+          </h4>
+          <p class="text-sm text-slate-600 leading-relaxed">
+            PT 治療中，複雜治療（42011B / 42014B）佔比為 <b>${complexRate}%</b>（其餘主要為中度治療 42005B / 42008B）。
+            建議定期抽審神經疾患與多部位骨科個案之病歷紀錄，確保符合複雜治療申報條件之個案皆有完整評估紀錄並正確申報，避免低報折損科內點數。
+          </p>
+        </div>
+
+        <div class="card p-5 border-t-4 border-t-rose-500">
+          <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-2">
+            <i data-lucide="shield-alert" class="w-4 h-4 text-rose-500"></i> 健保署 180 次核刪風險控管
+          </h4>
+          <p class="text-sm text-slate-600 leading-relaxed">
+            依健保規範，同一保險對象同年度物理與職能治療合計超過 180 次易列入審查重點。
+            建議治療師在系統「黃燈警戒（150~179次）」階段即與病患或家屬溝通階段性復健目標，評估轉為居家運動衛教或自費項目（如 ESW 體外震波）銜接。
+          </p>
+        </div>
+      `;
+      lucide.createIcons();
+
+      const churnBody = document.getElementById('tableChurnBody');
+      churnBody.innerHTML = '';
+      (store.churnList || []).forEach(p => {
+        churnBody.innerHTML += `
+          <tr class="hover:bg-slate-50">
+            <td class="py-2 px-3 font-mono">${p.pid}</td>
+            <td class="py-2 px-3 font-semibold">${p.name}</td>
+            <td class="py-2 px-3 text-slate-600">${p.source}</td>
+            <td class="py-2 px-3 text-right font-bold text-amber-700">${p.cnt} 次 (${p.prevM})</td>
+            <td class="py-2 px-3 text-right">${p.yearTotal} 次</td>
+            <td class="py-2 px-3 text-slate-500">${p.lastDate}</td>
+          </tr>`;
+      });
+    }
+
+    function drawChart(canvasId, type, labels, datasets, extraOptions = {}) {
+      if (store.charts[canvasId]) store.charts[canvasId].destroy();
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      store.charts[canvasId] = new Chart(ctx, {
+        type,
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom' } },
+          ...extraOptions
+        }
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.__PUBLIC_DATA__) {
+        store.isPublicMode = true;
+        store.publicSnapshot = window.__PUBLIC_DATA__;
+        if (window.__PUBLIC_DATA__.historyData) {
+          store.historyData = window.__PUBLIC_DATA__.historyData;
+        }
+        setStatusBadge('status-daily', '已載入公開統計包');
+        setStatusBadge('status-splint', '已合併副木統計');
+        setStatusBadge('status-schedule', '已合併班表人力');
+        updateMonthFilterOptions();
+        recalculateAndRender();
+      } else {
+        renderHistorySection();
+      }
+    });
+  </script>
+</body>
+</html>
